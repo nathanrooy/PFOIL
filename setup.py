@@ -1,4 +1,3 @@
-import setuptools
 from numpy.distutils.core import Extension
 
 fortran_ext = Extension(name = 'xfoil', sources = ['pfoil/xfoil.f'])
