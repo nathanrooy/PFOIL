@@ -11,7 +11,7 @@ if __name__ == "__main__":
         author_email = "nathanrooy@gmail.com",
         description  = "XFOIL based aerodynamic analysis and design",
         ext_modules  = [fortran_ext],
-        package_dir  = {'pfoil':'pfoil'},
+        packages     = ['pfoil'],
         install_requires = [
             'numpy>=1.19'
         ]
