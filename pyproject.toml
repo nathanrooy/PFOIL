@@ -6,7 +6,4 @@ requires = [
     "numpy>=1.19"
 ]
 
-[tool.cibuildwheel.macos]
-before-all = "brew install gcc"
-
 build-backend = "setuptools.build_meta"
