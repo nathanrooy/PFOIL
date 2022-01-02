@@ -1,5 +1,5 @@
 import numpy as np
-from ctypes import c_float
+from ctypes import c_bool, c_float, c_int
 from xfoil import pfoil_visc
 
 
@@ -56,9 +56,9 @@ class airfoil():
         
         
 
-def visc(foil, re, adeg, itmax=20, verbose=True, return_pfs_only=False):
+def visc(foil, re, adeg, itmax=100, verbose=True, return_pfs_only=False):
     
-    cl, cm, cd, cdf, cdp = pfoil_visc(foil.x, foil.y, float(adeg), float(re), int(foil.n), int(itmax), bool(verbose))
+    cl, cm, cd, cdf, cdp, lvconv = pfoil_visc(foil.x, foil.y, float(adeg), float(re), int(foil.n), int(itmax), c_bool(verbose))
    
    
-    return {'cl':cl, 'cm':cm, 'cd':cd, 'cdf':cdf, 'cdp':cdp}
+    return {'cl':cl, 'cm':cm, 'cd':cd, 'cdf':cdf, 'cdp':cdp, 'lvconv':bool(lvconv)}

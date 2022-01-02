@@ -2,26 +2,24 @@ C--- THIS SINGLE SUBROUTINE RUNS EVERYTHING WE NEED ----------------------------
 
       
       SUBROUTINE PFOIL_VISC(X_IN,Y_IN,ADEG_IN,RE_IN,N_IN,ITMAX_IN,
-     & VERB,CL_OUT, CM_OUT, CD_OUT, CDF_OUT, CDP_OUT)
+     & VERB_IN,CL_OUT, CM_OUT, CD_OUT, CDF_OUT, CDP_OUT, LVCONV_OUT)
 
 Cf2py intent(in) X_IN, Y_IN, ADEG_IN, RE_IN, N_IN , ITMAX_IN, VERB
-Cf2py intent(out) CL_OUT, CM_OUT, CD_OUT, CDF_OUT, CDP_OUT
+Cf2py intent(out) CL_OUT, CM_OUT, CD_OUT, CDF_OUT, CDP_OUT, LVCONV_OUT
       
       INCLUDE 'XFOIL.INC'
       INTEGER N_IN
-      LOGICAL VERB
+      LOGICAL VERB_IN, LVCONV_OUT
       REAL X_IN(IBX), Y_IN(IBX)
       REAL ADEG_IN, RE_IN
       
-      IF(VERB) THEN
-       WRITE(*,*) '> PFOIL VERBOSE MODE: ON'
-      ENDIF
-
+      VERB = VERB_IN
+      
 C     max panel angle threshold for warning
       DATA ANGTOL / 40.0 /
       
       CALL INIT
-      
+            
 C     transfer input variables over to xfoil
       NB     = N_IN
       REINF1 = RE_IN
@@ -76,178 +74,13 @@ C     transfer final values for output
       CM_OUT = CM
       CD_OUT = CD
       CDF_OUT = CDF
-      CDP_OUT = CDPDIF  
-      
-      WRITE(*,*) '> FINISHED!'
-      
+      CDP_OUT = CDPDIF
+      LVCONV_OUT = LVCONV
+            
       END
       
 C--- END -----------------------------------------------------------------------
 
-C ### AREAD.f ##################################################################
-
-      SUBROUTINE AREAD(LU,FNAME,NMAX,X,Y,N,NAME,ISPARS,ITYPE,INFO)
-      
-      DIMENSION X(NMAX), Y(NMAX)
-      CHARACTER*(*) FNAME
-      CHARACTER*(*) NAME
-      CHARACTER*(*) ISPARS
-   
-C--------------------------------------------------------
-C     Reads in several types of airfoil coordinate file.
-C
-C  Input:
-C       LU      logical unit to use for reading
-C       FNAME   name of coordinate file to be read,
-C               if FNAME(1:1).eq.' ', unit LU is assumed 
-C               to be already open
-C       INFO   0 keep quiet
-C              1 print info on airfoil
-C  Output:
-C       X,Y     coordinates
-C       N       number of X,Y coordinates
-C       NAME    character name string        (if ITYPE > 1)
-C       ISPARS  ISES/MSES domain-size string (if ITYPE > 2)
-C       ITYPE returns type of file:
-C           0  None.  Read error occurred.
-C           1  Generic.
-C           2  Labeled generic.
-C           3  MSES single element.
-C           4  MSES multi-element.
-C--------------------------------------------------------
-      CHARACTER*80 LINE1,LINE2,LINE
-      LOGICAL LOPEN, ERROR
-      DIMENSION A(10)
-C
-      IEL = 0
-      NEL = 0
-C
-C---- assume read error will occur
-      ITYPE = 0
-C      
-      LOPEN = FNAME(1:1) .NE. ' '
-      IF(LOPEN) OPEN(LU,FILE=FNAME,STATUS='OLD',ERR=98)
-C
- 11   READ(LU,1000,END=99,ERR=98) LINE1
-      IF(INDEX('#!',LINE1(1:1)) .NE. 0) GO TO 11
-C
- 12   READ(LU,1000,END=99) LINE2
-      IF(INDEX('#!',LINE2(1:1)) .NE. 0) GO TO 12
-C
-      I = 1
-C
-C---- try to read two numbers from first line
-      NA = 2
-      CALL GETFLT(LINE1,A,NA,ERROR)
-      IF(ERROR .OR. NA.LT.2) THEN
-C------ must be a name string
-        NAME = LINE1
-      ELSE
-C------ no name, just two valid numbers... must be plain airfoil file
-        NAME = ' '
-        IF(INFO.GT.0) THEN
-         WRITE(*,*)
-         WRITE(*,*) 'Plain airfoil file'
-        ENDIF
-        ITYPE = 1
-        REWIND(LU)
-        GO TO 50
-      ENDIF
-C
-C---- if we got here, there's a name line,
-C-    so now try to read four MSES domain numbers from second line
-      NA = 4
-      CALL GETFLT(LINE2,A,NA,ERROR)
-      IF(ERROR .OR. NA.LT.2) THEN
-C------ less than two valid numbers... not a valid format
-        GO TO 99
-C
-      ELSEIF(NA.LT.4) THEN
-C------ less than four numbers... usual .dat labeled file
-        NAME = LINE1
-        IF(INFO.GT.0) THEN
-         WRITE(*,*)
-         WRITE(*,*) 'Labeled airfoil file.  Name:  ', NAME
-        ENDIF
-        ITYPE = 2
-        REWIND(LU)
-        READ(LU,1000,END=99) LINE1
-        GO TO 50
-C
-      ELSE
-C------ four or more numbers... MSES or MISES file
-        IF(INFO.GT.0) THEN
-         WRITE(*,*)
-         WRITE(*,*) 'MSES airfoil file.  Name:  ', NAME
-        ENDIF
-        ITYPE = 3
-        ISPARS = LINE2
-      ENDIF
-C
-C---- read each element until 999.0 or end of file is encountered
-   50 NEL = NEL + 1
-      DO 55 I=1, NMAX
- 51     READ(LU,1000,END=60) LINE
-C
-C------ skip comment line
-        IF(INDEX('#!',LINE(1:1)) .NE. 0) GO TO 51
-C
-        NA = 2
-        CALL GETFLT(LINE,A,NA,ERROR)
-        IF(ERROR) GO TO 99
-C
-C------ skip line without at least two numbers
-        IF(NA.LT.2) GO TO 51
-C
-        X(I) = A(1)
-        Y(I) = A(2)
-C
-        IF (X(I) .EQ. 999.0 .AND. Y(I) .EQ. 999.0) THEN
-C-------- if this is the element we want, just exit
-          IF(IEL .EQ. NEL) GO TO 60
-C
-          IF(IEL.EQ.0) THEN
-           CALL ASKI('Enter element number^',IEL)
-           ITYPE = 4
-          ENDIF
-C
-C-------- if this is the specified element, exit.
-          IF(IEL .EQ. NEL) GO TO 60
-          GO TO 50
-        ENDIF
-   55 CONTINUE
-      WRITE(*,5030) NMAX
-      WRITE(*,5900)
-      IF(LOPEN) CLOSE(LU)
-      ITYPE = 0
-      RETURN
-C
-   60 N = I-1
-      IF(LOPEN) CLOSE(LU)
-      RETURN
-C
-   98 CONTINUE
-      NFN = INDEX(FNAME,' ') + 1
-      WRITE(*,5050) FNAME(1:NFN)
-      WRITE(*,5900)
-      ITYPE = 0
-      RETURN
-C
-   99 CONTINUE
-      IF(LOPEN) CLOSE(LU)
-      WRITE(*,5100)
-      WRITE(*,5900)
-      ITYPE = 0
-      RETURN
-C...............................................................
- 1000 FORMAT(A)
- 5030 FORMAT(/' Buffer array size exceeded'
-     &       /' Maximum number of points: ', I4 )
- 5050 FORMAT(/' File OPEN error.  Nonexistent file:  ', A)
- 5100 FORMAT(/' File READ error.  Unrecognizable file format')
- 5900 FORMAT( ' *** LOAD NOT COMPLETED ***' )
-      END ! AREAD
-      
       
 C***********************************************************************
 C    Module:  spline.f
@@ -611,332 +444,6 @@ C***********************************************************************
 C
 C
 C==== user input routines with prompting and error trapping
-C
-C
-      SUBROUTINE ASKI(PROMPT,IINPUT)
-C
-C---- integer input
-C
-      CHARACTER*(*) PROMPT
-      INTEGER IINPUT
-      CHARACTER LINE*80
-C
-      NP = INDEX(PROMPT,'^') - 1
-      IF(NP.LE.0) NP = LEN(PROMPT)
-C
- 10   WRITE(*,1000) PROMPT(1:NP)
-C
-      READ (*,1001,ERR=10) LINE
-      IF(LINE.NE.' ') THEN
-        READ (LINE,*,ERR=10) IINPUT
-      ENDIF  
-      RETURN
-C
- 1000 FORMAT(/A,'   i>  ',$)
- 1001 FORMAT(A)
-      END ! ASKI
-
-
-      SUBROUTINE ASKR(PROMPT,RINPUT)
-C
-C---- real input
-C
-      CHARACTER*(*) PROMPT
-      REAL RINPUT
-      CHARACTER LINE*80
-C
-      NP = INDEX(PROMPT,'^') - 1
-      IF(NP.LE.0) NP = LEN(PROMPT)
-C
- 10   WRITE(*,1000) PROMPT(1:NP)
-C
-      READ (*,1001,ERR=10) LINE
-      IF(LINE.NE.' ') THEN
-        READ (LINE,*,ERR=10) RINPUT
-      ENDIF  
-      RETURN
-C
- 1000 FORMAT(/A,'   r>  ',$)
- 1001 FORMAT(A)
-      END ! ASKR
-
-
-      SUBROUTINE ASKL(PROMPT,LINPUT)
-C
-C---- logical input
-C
-      CHARACTER*(*) PROMPT
-      LOGICAL LINPUT
-      CHARACTER*1 CHAR
-C
-      NP = INDEX(PROMPT,'^') - 1
-      IF(NP.LE.0) NP = LEN(PROMPT)
-C
- 10   WRITE(*,1000) PROMPT(1:NP)
-      READ (*,1010) CHAR
-      IF(CHAR.EQ.'y') CHAR = 'Y'
-      IF(CHAR.EQ.'n') CHAR = 'N'
-      IF(CHAR.NE.'Y' .AND. CHAR.NE.'N') GO TO 10
-C
-      LINPUT = CHAR .EQ. 'Y'
-      RETURN
-C
- 1000 FORMAT(/A,' y/n>  ',$)
- 1010 FORMAT(A)
-      END ! ASKL
-
-
-      SUBROUTINE ASKS(PROMPT,INPUT)
-C
-C---- string of arbitrary length input
-C
-      CHARACTER*(*) PROMPT
-      CHARACTER*(*) INPUT
-C
-      NP = INDEX(PROMPT,'^') - 1
-      IF(NP.LE.0) NP = LEN(PROMPT)
-C
-      WRITE(*,1000) PROMPT(1:NP)
-      READ (*,1010) INPUT
-C
-      RETURN
-C
- 1000 FORMAT(/A,'   s>  ',$)
- 1010 FORMAT(A)
-      END ! ASKS
-
-
-      SUBROUTINE ASKC(PROMPT,COMAND,CARGS)
-C
-C---- returns 4-byte character string input converted to uppercase
-C---- also returns rest of input characters in CARGS string
-C
-      CHARACTER*(*) PROMPT
-      CHARACTER*(*) COMAND, CARGS
-C
-      CHARACTER*128 LINE
-      LOGICAL ERROR
-C
-      IZERO = ICHAR('0')
-C
-      NP = INDEX(PROMPT,'^') - 1
-      IF(NP.LE.0) NP = LEN(PROMPT)
-C
-      WRITE(*,1000) PROMPT(1:NP)
-      READ (*,1020) LINE
-C
-C---- strip off leading blanks
-      DO K=1, 128
-        IF(LINE(1:1) .EQ. ' ') THEN
-         LINE = LINE(2:128)
-        ELSE
-         GO TO 5
-        ENDIF
-      ENDDO
- 5    CONTINUE
-C
-C---- find position of first blank, "+", "-", ".", ",", or numeral
-      K = INDEX(LINE,' ')
-      KI = INDEX(LINE,'-')
-      IF(KI.NE.0) K = MIN(K,KI)
-      KI = INDEX(LINE,'+')
-      IF(KI.NE.0) K = MIN(K,KI)
-      KI = INDEX(LINE,'.')
-      IF(KI.NE.0) K = MIN(K,KI)
-      KI = INDEX(LINE,',')
-      IF(KI.NE.0) K = MIN(K,KI)
-      DO I=0, 9
-        KI = INDEX(LINE,CHAR(IZERO+I))
-        IF(KI.NE.0) K = MIN(K,KI)
-      ENDDO
-C
-C---- there is no blank between command and argument... use first 4 characters
-      IF(K.LE.0) K = 5
-C
-      IF(K.EQ.1) THEN
-C------ the "command" is a number... set entire COMAND string with it
-        COMAND = LINE
-      ELSE
-C------ the "command" is some string... just use the part up to the argument
-        COMAND = LINE(1:K-1)
-      ENDIF
-C
-C---- convert it to uppercase
-      CALL LC2UC(COMAND)
-C
-      CARGS = LINE(K:128)
-      CALL STRIP(CARGS,NCARGS)
-      RETURN
-C
- 1000 FORMAT(/A,'   c>  ',$)
- 1020 FORMAT(A)
-      END ! ASKC
-
-
-      SUBROUTINE LC2UC(INPUT)
-      CHARACTER*(*) INPUT
-C
-      CHARACTER*26 LCASE, UCASE
-      DATA LCASE / 'abcdefghijklmnopqrstuvwxyz' /
-      DATA UCASE / 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' /
-C
-      N = LEN(INPUT)
-C
-      DO 10 I=1, N
-        K = INDEX( LCASE , INPUT(I:I) )
-        IF(K.GT.0) INPUT(I:I) = UCASE(K:K)
- 10   CONTINUE
-C
-      RETURN
-      END ! LC2UC
-
-
-
-      SUBROUTINE READI(N,IVAR,ERROR)
-      DIMENSION IVAR(N)
-      LOGICAL ERROR
-C--------------------------------------------------
-C     Reads N integer variables, leaving unchanged 
-C     if only <return> is entered.
-C--------------------------------------------------
-      DIMENSION IVTMP(40)
-      CHARACTER*80 LINE
-C
-      READ(*,1000) LINE
- 1000 FORMAT(A80)
-C
-      DO 10 I=1, N
-        IVTMP(I) = IVAR(I)
- 10   CONTINUE
-C
-      NTMP = 40
-      CALL GETINT(LINE,IVTMP,NTMP,ERROR)
-C
-      IF(ERROR) RETURN
-C
-      DO 20 I=1, N
-        IVAR(I) = IVTMP(I)
- 20   CONTINUE
-C
-      RETURN
-      END ! READI
-
-
-
-      SUBROUTINE READR(N,VAR,ERROR)
-      DIMENSION VAR(N)
-      LOGICAL ERROR
-C-------------------------------------------------
-C     Reads N real variables, leaving unchanged 
-C     if only <return> is entered.
-C-------------------------------------------------
-      DIMENSION VTMP(40)
-      CHARACTER*80 LINE
-C
-      READ(*,1000) LINE
- 1000 FORMAT(A80)
-C
-      DO 10 I=1, N
-        VTMP(I) = VAR(I)
- 10   CONTINUE
-C
-      NTMP = 40
-      CALL GETFLT(LINE,VTMP,NTMP,ERROR)
-C
-      IF(ERROR) RETURN
-C
-      DO 20 I=1, N
-        VAR(I) = VTMP(I)
- 20   CONTINUE
-C
-      RETURN
-      END ! READR
-
-
-
-
-      SUBROUTINE GETINT(INPUT,A,N,ERROR)
-      CHARACTER*(*) INPUT
-      INTEGER A(*)
-      LOGICAL ERROR
-C----------------------------------------------------------
-C     Parses character string INPUT into an array
-C     of integer numbers returned in A(1...N)
-C
-C     Will attempt to extract no more than N numbers, 
-C     unless N = 0, in which case all numbers present
-C     in INPUT will be extracted.
-C
-C     N returns how many numbers were actually extracted.
-C----------------------------------------------------------
-      CHARACTER*130 REC
-      CHARACTER*1 TAB
-C
-      TAB = CHAR(9)
-C
-C---- only first 128 characters in INPUT will be parsed
-      ILEN = MIN( LEN(INPUT) , 128 )
-      ILENP = ILEN + 2
-C
-C---- put input into local work string (which will be munched)
-      REC(1:ILENP) = INPUT(1:ILEN) // ' ,'
-C
-C---- ignore everything after a "!" character
-      K = INDEX(REC,'!')
-      IF(K.GT.0) REC(1:ILEN) = REC(1:K-1)
-C
-C---- change tabs to spaces
- 5    K = INDEX(REC(1:ILEN),TAB)
-      IF(K.GT.0) THEN
-       REC(K:K) = ' '
-       GO TO 5
-      ENDIF
-C
-      NINP = N
-C
-C---- count up how many numbers are to be extracted
-      N = 0
-      K = 1
-      DO 10 IPASS=1, ILEN
-C------ search for next space or comma starting with current index K
-        KSPACE = INDEX(REC(K:ILENP),' ') + K - 1
-        KCOMMA = INDEX(REC(K:ILENP),',') + K - 1
-C
-        IF(K.EQ.KSPACE) THEN
-C------- just skip this space
-         K = K+1
-         GO TO 9
-        ENDIF
-C
-        IF(K.EQ.KCOMMA) THEN
-C------- comma found.. increment number count and keep looking
-         N = N+1
-         K = K+1
-         GO TO 9
-        ENDIF
-C
-C------ neither space nor comma found, so we ran into a number...
-C-    ...increment number counter and keep looking after next space or comma
-        N = N+1
-        K = MIN(KSPACE,KCOMMA) + 1
-C
-  9     IF(K.GE.ILEN) GO TO 11
- 10   CONTINUE
-C
-C---- decide on how many numbers to read, and go ahead and read them
- 11   IF(NINP.GT.0) N = MIN( N, NINP )
-      READ(REC(1:ILEN),*,ERR=20) (A(I),I=1,N)
-      ERROR = .FALSE.
-      RETURN
-C
-C---- bzzzt !!!
- 20   CONTINUE
-ccc   WRITE(*,*) 'GETINT: String-to-integer conversion error.'
-      N = 0
-      ERROR = .TRUE.
-      RETURN
-      END ! GETINT
-
 
       SUBROUTINE GETFLT(INPUT,A,N,ERROR)
       CHARACTER*(*) INPUT
@@ -1200,13 +707,15 @@ C---- save TE thickness
 C
       IF(.NOT.LBLINI) THEN
 C----- initialize BL by marching with Ue (fudge at separation)
-       WRITE(*,*)
-       WRITE(*,*) 'Initializing BL ...'
+       IF(VERB) THEN
+         WRITE(*,*)
+         WRITE(*,*) 'Initializing BL ...'
+       ENDIF
        CALL MRCHUE
        LBLINI = .TRUE.
       ENDIF
 C
-      WRITE(*,*)
+      IF(VERB) WRITE(*,*)
 C
 C---- march BL with current Ue and Ds to establish transition
       CALL MRCHDU
@@ -1343,7 +852,7 @@ C---- check for transition and set TRAN, XT, etc. if found
         CALL TRCHEK
         AMI = AMPL2
       ENDIF
-      IF(IBL.EQ.ITRAN(IS) .AND. .NOT.TRAN) THEN
+      IF(IBL.EQ.ITRAN(IS) .AND. .NOT.TRAN .AND. VERB) THEN
        WRITE(*,*) 'SETBL: Xtr???  n1 n2: ', AMPL1, AMPL2
       ENDIF
 C
@@ -1621,10 +1130,10 @@ C---- next streamwise station
  1000 CONTINUE
 C
       IF(TFORCE(IS)) THEN
-       WRITE(*,9100) IS,XOCTR(IS),ITRAN(IS)
+       IF(VERB) WRITE(*,9100) IS,XOCTR(IS),ITRAN(IS)
  9100  FORMAT(1X,'Side',I2,' forced transition at x/c = ',F7.4,I5)
       ELSE
-       WRITE(*,9200) IS,XOCTR(IS),ITRAN(IS)
+       IF(VERB) WRITE(*,9200) IS,XOCTR(IS),ITRAN(IS)
  9200  FORMAT(1X,'Side',I2,'  free  transition at x/c = ',F7.4,I5)
       ENDIF
 C
@@ -1677,7 +1186,7 @@ C---- shape parameters for separation criteria
 C
       DO 2000 IS = 1, 2
 C
-      WRITE(*,*) '   side ', IS, ' ...'
+      IF(VERB) WRITE(*,*) '   side ', IS, ' ...'
 C
       AMCRIT = ACRIT(IS)
 C
@@ -1839,7 +1348,7 @@ C---------- limit specified Hk to something reasonable
              HTARG = MAX( HTARG , HMAX )
             ENDIF
 C
-            WRITE(*,1300) IBL, HTARG
+            IF(VERB) WRITE(*,1300) IBL, HTARG
  1300       FORMAT(' MRCHUE: Inverse mode at', I4, '     Hk =', F8.3)
 C
 C---------- try again with prescribed Hk
@@ -1895,7 +1404,7 @@ C
           IF(DMAX.LE.1.0E-5) GO TO 110
 C
   100   CONTINUE
-        WRITE(*,1350) IBL, IS, DMAX 
+        IF(VERB) WRITE(*,1350) IBL, IS, DMAX 
  1350   FORMAT(' MRCHUE: Convergence failed at',I4,'  side',I2,
      &         '    Res =', E12.4)
 C
@@ -2218,7 +1727,7 @@ C
 C
   100   CONTINUE
 C
-        WRITE(*,1350) IBL, IS, DMAX 
+        IF(VERB) WRITE(*,1350) IBL, IS, DMAX 
  1350   FORMAT(' MRCHDU: Convergence failed at',I4,'  side',I2,
      &         '    Res =', E12.4)
 C
@@ -2358,7 +1867,7 @@ C
       ENDIF
 C
       IF(XIFORC .LT. 0.0) THEN
-       WRITE(*,1000) IS
+       IF(VERB) WRITE(*,1000) IS
  1000  FORMAT(/' ***  Stagnation point is past trip on side',I2,'  ***')
        XIFORC = XSSI(IBLTE(IS),IS)
       ENDIF
@@ -5673,13 +5182,17 @@ C
       CLA = MAX( CLS , 0.000001 )
 C
       IF(RETYP.LT.1 .OR. RETYP.GT.3) THEN
-        WRITE(*,*) 'MRCL:  Illegal Re(CL) dependence trigger.'
-        WRITE(*,*) '       Setting fixed Re.'
+        IF(VERB) THEN
+          WRITE(*,*) 'MRCL:  Illegal Re(CL) dependence trigger.'
+          WRITE(*,*) '       Setting fixed Re.'
+        ENDIF
         RETYP = 1
       ENDIF
       IF(MATYP.LT.1 .OR. MATYP.GT.3) THEN
-        WRITE(*,*) 'MRCL:  Illegal Mach(CL) dependence trigger.'
-        WRITE(*,*) '       Setting fixed Mach.'
+        IF(VERB) THEN
+          WRITE(*,*) 'MRCL:  Illegal Mach(CL) dependence trigger.'
+          WRITE(*,*) '       Setting fixed Mach.'
+        ENDIF
         MATYP = 1
       ENDIF
 C
@@ -5721,9 +5234,11 @@ C
 C
 C
       IF(MINF .GE. 0.99) THEN
-        WRITE(*,*)
-        WRITE(*,*) 'MRCL: CL too low for chosen Mach(CL) dependence'
-        WRITE(*,*) '      Aritificially limiting Mach to  0.99'
+        IF(VERB) THEN
+          WRITE(*,*)
+          WRITE(*,*) 'MRCL: CL too low for chosen Mach(CL) dependence'
+          WRITE(*,*) '      Aritificially limiting Mach to  0.99'
+        ENDIF
         MINF = 0.99
         M_CLS = 0.
       ENDIF
@@ -5732,9 +5247,11 @@ C
       IF(REINF1 .GT. 0.0) RRAT = REINF/REINF1
 C
       IF(RRAT .GT. 100.0) THEN
-        WRITE(*,*)
-        WRITE(*,*) 'MRCL: CL too low for chosen Re(CL) dependence'
-        WRITE(*,*) '      Aritificially limiting Re to ',REINF1*100.0
+        IF(VERB) THEN
+          WRITE(*,*)
+          WRITE(*,*) 'MRCL: CL too low for chosen Re(CL) dependence'
+          WRITE(*,*) '      Aritificially limiting Re to ',REINF1*100.0
+        ENDIF
         REINF = REINF1*100.0
         R_CLS = 0.
       ENDIF
@@ -5771,14 +5288,14 @@ C
       END ! COMSET
 
 
-      SUBROUTINE CPCALC(N,Q,QINF,MINF,CP)
+      SUBROUTINE CPCALC(N,Q,QINF,MINF,CP,VERB_)
 C---------------------------------------------
 C     Sets compressible Cp from speed.
 C---------------------------------------------
       DIMENSION Q(N),CP(N)
       REAL MINF
 C
-      LOGICAL DENNEG
+      LOGICAL DENNEG, VERB_
 C
       BETA = SQRT(1.0 - MINF**2)
       BFAC = 0.5*MINF**2 / (1.0 + BETA)
@@ -5792,7 +5309,7 @@ C
         IF(DEN .LE. 0.0) DENNEG = .TRUE.
   20  CONTINUE
 C
-      IF(DENNEG) THEN
+      IF(DENNEG .AND. VERB_) THEN
        WRITE(*,*)
        WRITE(*,*) 'CPCALC: Local speed too large. ',
      &            'Compressibility corrections invalid.'
@@ -5963,11 +5480,11 @@ C---- calculate airfoil area assuming counterclockwise ordering
 C
       IF(AREA.GE.0.0) THEN
        LCLOCK = .FALSE.
-       WRITE(*,1010) NB
+       IF(VERB) WRITE(*,1010) NB
       ELSE
 C----- if area is negative (clockwise order), reverse coordinate order
        LCLOCK = .TRUE.
-       WRITE(*,1011) NB
+       IF(VERB) WRITE(*,1011) NB
        DO 55 I=1, NB/2
          XTMP = XB(NB-I+1)
          YTMP = YB(NB-I+1)
@@ -5980,7 +5497,7 @@ C----- if area is negative (clockwise order), reverse coordinate order
 C
       IF(LNORM) THEN
        CALL NORM(XB,XBP,YB,YBP,SB,NB)
-       WRITE(*,1020)
+       IF(VERB) WRITE(*,1020)
       ENDIF
 C
       CALL SCALC(XB,YB,SB,NB)
@@ -5991,15 +5508,14 @@ C
      &            SBLE,CHORDB,AREAB,RADBLE,ANGBTE,
      &            EI11BA,EI22BA,APX1BA,APX2BA,
      &            EI11BT,EI22BT,APX1BT,APX2BT,
-     &            THICKB,CAMBRB )
+     &            THICKB,CAMBRB,VERB)
 C
       XBLE = SEVAL(SBLE,XB,XBP,SB,NB)
       YBLE = SEVAL(SBLE,YB,YBP,SB,NB)
       XBTE = 0.5*(XB(1) + XB(NB))
       YBTE = 0.5*(YB(1) + YB(NB))
 C
-      WRITE(*,1050) XBLE,YBLE, CHORDB,
-     &              XBTE,YBTE
+      IF(VERB) WRITE(*,1050) XBLE,YBLE, CHORDB,XBTE,YBTE
 C
 C---- set reasonable MSES domain parameters for non-MSES coordinate file
       IF(ITYPE.LE.2 .AND. ISPARS.EQ.' ') THEN
@@ -6013,7 +5529,7 @@ C---- set reasonable MSES domain parameters for non-MSES coordinate file
         XOUT = AINT(20.0*ABS(XOUT/CHORDB)+0.5)/20.0 * SIGN(CHORDB,XOUT)
         YBOT = AINT(20.0*ABS(YBOT/CHORDB)+0.5)/20.0 * SIGN(CHORDB,YBOT)
         YTOP = AINT(20.0*ABS(YTOP/CHORDB)+0.5)/20.0 * SIGN(CHORDB,YTOP)
-        WRITE(ISPARS,1005) XINL, XOUT, YBOT, YTOP
+        IF(VERB) WRITE(ISPARS,1005) XINL, XOUT, YBOT, YTOP
  1005   FORMAT(1X, 4F8.2 )
       ENDIF
 C
@@ -6100,49 +5616,20 @@ C    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 C***********************************************************************
 
 
-      SUBROUTINE GETXYF(X,XP,Y,YP,S,N, TOPS,BOTS,XF,YF)
-      DIMENSION X(N),XP(N),Y(N),YP(N),S(N)
-C
-      IF(XF .EQ. -999.0)
-     &  CALL ASKR('Enter flap hinge x location^',XF)
-C
-C---- find top and bottom y at hinge x location
-      TOPS = S(1) + (X(1) - XF)
-      BOTS = S(N) - (X(N) - XF)
-      CALL SINVRT(TOPS,XF,X,XP,S,N)      
-      CALL SINVRT(BOTS,XF,X,XP,S,N)      
-      TOPY = SEVAL(TOPS,Y,YP,S,N)
-      BOTY = SEVAL(BOTS,Y,YP,S,N)
-C
-      WRITE(*,1000) TOPY, BOTY
- 1000 FORMAT(/'  Top    surface:  y =', F8.4,'     y/t = 1.0'
-     &       /'  Bottom surface:  y =', F8.4,'     y/t = 0.0')
-C
-      IF(YF .EQ. -999.0)
-     & CALL ASKR(
-     &  'Enter flap hinge y location (or 999 to specify y/t)^',YF)
-C
-      IF(YF .EQ. 999.0) THEN
-        CALL ASKR('Enter flap hinge relative y/t location^',YREL)
-        YF = TOPY*YREL + BOTY*(1.0-YREL)
-      ENDIF
-C
-      RETURN
-      END ! GETXYF
-      
-
       SUBROUTINE ABCOPY(LCONF)
       INCLUDE 'XFOIL.INC'
       LOGICAL LCONF
 C
       IF(NB.LE.1) THEN
-       WRITE(*,*) 'ABCOPY: Buffer airfoil not available.'
+       IF(VERB) WRITE(*,*) 'ABCOPY: Buffer airfoil not available.'
        RETURN
       ELSEIF(NB.GT.IQX-5) THEN
-       WRITE(*,*) 'Maximum number of panel nodes  : ',IQX-5
-       WRITE(*,*) 'Number of buffer airfoil points: ',NB
-       WRITE(*,*) 'Current airfoil cannot be set.'
-       WRITE(*,*) 'Try executing PANE at Top Level instead.'
+       IF(VERB) THEN
+         WRITE(*,*) 'Maximum number of panel nodes  : ',IQX-5
+         WRITE(*,*) 'Number of buffer airfoil points: ',NB
+         WRITE(*,*) 'Current airfoil cannot be set.'
+         WRITE(*,*) 'Try executing PANE at Top Level instead.'
+       ENDIF
        RETURN
       ENDIF
       IF(N.NE.NB) LBLINI = .FALSE.
@@ -6200,7 +5687,7 @@ C
       LSCINI = .FALSE.
 CCC      LBLINI = .FALSE.
 C
-      IF(LCONF) WRITE(*,1200) N
+      IF(LCONF .AND. VERB) WRITE(*,1200) N
  1200 FORMAT(/' Current airfoil nodes set from buffer airfoil nodes (',
      &        I4,' )')
 C
@@ -6260,10 +5747,11 @@ C
      &             SLE,CHORD,AREA,RADLE,ANGTE,
      &             EI11A,EI22A,APX1A,APX2A,
      &             EI11T,EI22T,APX1T,APX2T,
-     &             THICK,CAMBR)
+     &             THICK,CAMBR,VERB_)
       DIMENSION X(*), XP(*), Y(*), YP(*), S(*), T(*)
 C
       PARAMETER (IBX=600)
+      LOGICAL VERB_
       DIMENSION
      &     XCAM(2*IBX), YCAM(2*IBX), YCAMP(2*IBX),
      &     XTHK(2*IBX), YTHK(2*IBX), YTHKP(2*IBX)
@@ -6310,7 +5798,7 @@ cc      CALL GETMAX(XCAM,YCAM,YCAMP,NCAM,XCAMBR,CAMBR)
 cc      CALL GETMAX(XTHK,YTHK,YTHKP,NTHK,XTHICK,THICK)
 cc      THICK = 2.0*THICK
 C
-      WRITE(*,1000) THICK,XTHICK,CAMBR,XCAMBR
+      IF (VERB_) WRITE(*,1000) THICK,XTHICK,CAMBR,XCAMBR
  1000 FORMAT( ' Max thickness = ',F12.6,'  at x = ',F7.3,
      &       /' Max camber    = ',F12.6,'  at x = ',F7.3)
 
@@ -6799,12 +6287,12 @@ C---- set final Mach, CL, Cp distributions, and hinge moment
       CALL COMSET
       CALL CLCALC(N,X,Y,GAM,GAM_A,ALFA,MINF,QINF, XCMREF,YCMREF,
      &            CL,CM,CDP, CL_ALF,CL_MSQ)
-      CALL CPCALC(N,QINV,QINF,MINF,CPI)
+      CALL CPCALC(N,QINV,QINF,MINF,CPI,VERB)
       IF(LVISC) THEN
-       CALL CPCALC(N+NW,QVIS,QINF,MINF,CPV)
-       CALL CPCALC(N+NW,QINV,QINF,MINF,CPI)
+       CALL CPCALC(N+NW,QVIS,QINF,MINF,CPV,VERB)
+       CALL CPCALC(N+NW,QINV,QINF,MINF,CPI,VERB)
       ELSE
-       CALL CPCALC(N,QINV,QINF,MINF,CPI)
+       CALL CPCALC(N,QINV,QINF,MINF,CPI,VERB)
       ENDIF
 C      IF(LFLAP) CALL MHINGE
 C
@@ -6872,10 +6360,10 @@ C
 C----- set correct CL if converged point exists
        CALL QVFUE
        IF(LVISC) THEN
-        CALL CPCALC(N+NW,QVIS,QINF,MINF,CPV)
-        CALL CPCALC(N+NW,QINV,QINF,MINF,CPI)
+        CALL CPCALC(N+NW,QVIS,QINF,MINF,CPV,VERB)
+        CALL CPCALC(N+NW,QINV,QINF,MINF,CPI,VERB)
        ELSE
-        CALL CPCALC(N,QINV,QINF,MINF,CPI)
+        CALL CPCALC(N,QINV,QINF,MINF,CPI,VERB)
        ENDIF
        CALL GAMQV
        CALL CLCALC(N,X,Y,GAM,GAM_A,ALFA,MINF,QINF, XCMREF,YCMREF,
@@ -6892,8 +6380,11 @@ C---- Newton iteration for entire BL solution
         WRITE(*,*) '> NO VALUE FOR NITER WAS SPECIFIED...'
       ENDIF
       
-      WRITE(*,*)
-      WRITE(*,*) 'Solving BL system ...'
+      IF(VERB) THEN
+        WRITE(*,*)
+        WRITE(*,*) 'Solving BL system ...'
+      ENDIF
+      
       DO 1000 ITER=1, NITER
 C
 C------ fill Newton system for BL variables
@@ -6930,12 +6421,12 @@ C------ set updated CL,CD
         CALL CDCALC
 C
 C------ display changes and test for convergence
-        IF(RLX.LT.1.0) 
+        IF(RLX.LT.1.0 .AND. VERB) 
      &   WRITE(*,2000) ITER, RMSBL, RMXBL, VMXBL,IMXBL,ISMXBL,RLX
-        IF(RLX.EQ.1.0) 
+        IF(RLX.EQ.1.0 .AND. VERB) 
      &   WRITE(*,2010) ITER, RMSBL, RMXBL, VMXBL,IMXBL,ISMXBL
-         CDPDIF = CD - CDF
-         WRITE(*,2020) ALFA/DTOR, CL, CM, CD, CDF, CDPDIF
+        CDPDIF = CD - CDF
+        IF(VERB) WRITE(*,2020) ALFA/DTOR, CL, CM, CD, CDF, CDPDIF
 c         CDSURF = CDP + CDF
 c         WRITE(*,2025) CDSURF, CDF, CDP
 
@@ -6947,11 +6438,11 @@ c         WRITE(*,2025) CDSURF, CDF, CDP
         ENDIF
 C
  1000 CONTINUE
-      WRITE(*,*) 'VISCAL:  Convergence failed'
+      IF(VERB) WRITE(*,*) 'VISCAL:  Convergence failed'
 C
    90 CONTINUE
-      CALL CPCALC(N+NW,QINV,QINF,MINF,CPI)
-      CALL CPCALC(N+NW,QVIS,QINF,MINF,CPV)
+      CALL CPCALC(N+NW,QINV,QINF,MINF,CPI,VERB)
+      CALL CPCALC(N+NW,QVIS,QINF,MINF,CPV,VERB)
 C      IF(LFLAP) CALL MHINGE
 
 
@@ -6981,7 +6472,7 @@ C      IF(LFLAP) CALL MHINGE
         enddo
         delp = patt - psep
 
-        write(*,9922) 
+        IF(VERB) write(*,9922) 
      &    acrit(is), hkmax, cd, 2.0*psep, 2.0*patt, 2.0*delp,
      &    xoctr(is)
  9922   format(1x, f10.3, f10.4, f11.6, 3f11.6, f10.4, '     #')
@@ -7007,15 +6498,15 @@ C....................................................................
       INCLUDE 'XFOIL.INC'
       LOGICAL LM, LR
 C
-      IF(LM .OR. LR) WRITE(*,*)
+      IF(LM .OR. LR .AND. VERB) WRITE(*,*)
 C
-      IF(LM) THEN
+      IF(LM .AND. VERB) THEN
        IF(MATYP.EQ.1) WRITE(*,1100) MINF1
        IF(MATYP.EQ.2) WRITE(*,1100) MINF1, ' / sqrt(CL)'
        IF(MATYP.EQ.3) WRITE(*,1100) MINF1, ' / CL'
       ENDIF
 C
-      IF(LR) THEN
+      IF(LR .AND. VERB) THEN
        IF(RETYP.EQ.1) WRITE(*,1200) REINF1
        IF(RETYP.EQ.2) WRITE(*,1200) REINF1, ' / sqrt(CL)'
        IF(RETYP.EQ.3) WRITE(*,1200) REINF1, ' / CL'
@@ -8027,7 +7518,7 @@ C---- distance of internal control point ahead of sharp TE
 C-    (fraction of smaller panel length adjacent to TE)
       BWT = 0.1
 C
-      WRITE(*,*) 'Calculating unit vorticity distributions ...'
+      IF(VERB) WRITE(*,*) 'Calculating unit vorticity distributions ...'
 C
       DO 10 I=1, N
         GAM(I) = 0.
@@ -8183,7 +7674,7 @@ C     matrix for current airfoil and wake geometry.
 C-----------------------------------------------------
       INCLUDE 'XFOIL.INC'
 C
-      WRITE(*,*) 'Calculating source influence matrix ...'
+      IF(VERB) WRITE(*,*) 'Calculating source influence matrix ...'
 C
       IF(.NOT.LADIJ) THEN
 C
@@ -8304,12 +7795,12 @@ C     vorticity and/or mass source distributions.
 C-----------------------------------------------------
       INCLUDE 'XFOIL.INC'
 C
-      WRITE(*,*) 'Calculating wake trajectory ...'
+      IF(VERB) WRITE(*,*) 'Calculating wake trajectory ...'
 C
 C---- number of wake points
       NW = N/12 + 10*INT(WAKLEN)
       IF(NW.GT.IWX) THEN
-       WRITE(*,*)
+       IF(VERB) WRITE(*,*)
      &  'Array size (IWX) too small.  Last wake point index reduced.'
        NW = IWX
       ENDIF
@@ -8395,7 +7886,9 @@ C
         IF(GAM(I).GE.0.0 .AND. GAM(I+1).LT.0.0) GO TO 11
    10 CONTINUE
 C
-      WRITE(*,*) 'STFIND: Stagnation point not found. Continuing ...'
+      IF(VERB) THEN
+        WRITE(*,*) 'STFIND: Stagnation point not found. Continuing ...'
+      ENDIF
       I = N/2
 C
    11 CONTINUE
@@ -8472,8 +7965,10 @@ C
 C
       IBLMAX = MAX(IBLTE(1),IBLTE(2)) + NW
       IF(IBLMAX.GT.IVX) THEN
-        WRITE(*,*) ' ***  BL array overflow.'
-        WRITE(*,*) ' ***  Increase IVX to at least', IBLMAX
+        IF(VERB) THEN
+          WRITE(*,*) ' ***  BL array overflow.'
+          WRITE(*,*) ' ***  Increase IVX to at least', IBLMAX
+        ENDIF
         STOP
       ENDIF
 C
