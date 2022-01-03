@@ -17,7 +17,7 @@ class test_naca0012(unittest.TestCase):
     def test_xfoil_naca0012(self):
         naca0012 = airfoil()
         naca0012.load('tests/naca0012.txt')
-        with open('naca0012_xfoil_6.99.txt', 'r') as txt:
+        with open('tests/naca0012_xfoil_6.99.txt', 'r') as txt:
             for line in txt.readlines()[1:]:
                 re, adeg, lvconv, cl, cm, cd, cdf, cdp, itmax =  line.replace('\n','').split(',')
                 _res = visc(naca0012, re, adeg, verbose=False, itmax=10_000)
